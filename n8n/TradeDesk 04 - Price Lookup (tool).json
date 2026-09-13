@@ -1,0 +1,201 @@
+{
+  "name": "TradeDesk 04 - Price Lookup (tool)",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "service_code"
+            },
+            {
+              "name": "business_id"
+            }
+          ]
+        }
+      },
+      "id": "3ee0c828-e527-47d5-84e4-02d3803a7ce3",
+      "name": "When Called",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -912,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ALLOWLISTED DATA ACCESS LAYER\n// The agent never writes SQL. It may only name a service from this fixed\n// list. Anything else is rejected before the database is touched.\nconst ALLOWED_SERVICES = [\n  'DIAG', 'AC_REPAIR', 'FURNACE_REPAIR', 'AC_INSTALL',\n  'FURNACE_INSTALL', 'TUNEUP', 'DUCT_CLEAN', 'EMERGENCY'\n];\n\nconst raw = String($json.service_code || '').trim().toUpperCase();\nconst businessId = String($json.business_id || '').trim();\n\nif (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(businessId)) {\n  throw new Error('business_id must be a valid UUID');\n}\n\nif (ALLOWED_SERVICES.indexOf(raw) === -1) {\n  // Not an error the caller can exploit - just tell it the valid options.\n  return [{ json: {\n    allowed: false,\n    service_code: null,\n    business_id: businessId,\n    message: 'UNKNOWN_SERVICE: pick one of ' + ALLOWED_SERVICES.join(', ')\n  }}];\n}\n\nreturn [{ json: { allowed: true, service_code: raw, business_id: businessId } }];"
+      },
+      "id": "1ff5db0d-0215-4f46-803d-54dc531aa986",
+      "name": "Allowlist Check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -688,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "allowed",
+              "leftValue": "={{ $json.allowed }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "21527880-532d-4a0d-9623-c2ad440a262e",
+      "name": "Is Allowed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -464,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT service_name, price_low, price_high, unit, notes\nFROM price_book\nWHERE business_id = $1\n  AND service_code = $2\n  AND active = true\nLIMIT 1;",
+        "options": {
+          "queryReplacement": "={{ [ $json.business_id, $json.service_code ] }}"
+        }
+      },
+      "id": "843a3558-185d-4c6b-923b-1b3429056962",
+      "name": "Price Lookup",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -224,
+        48
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "wYavQkoVwNLx84Sc",
+          "name": "TradeDesk Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const row = $input.first().json;\n\nif (!row || !row.service_name) {\n  return [{ json: { answer: 'NO_PRICE: that service is not in this business price book. Say a coordinator will confirm pricing.' } }];\n}\n\nreturn [{ json: {\n  answer: row.service_name + ': typically $' + row.price_low + ' to $' + row.price_high\n    + ' per ' + row.unit\n    + (row.notes ? ' (' + row.notes + ')' : '')\n    + '. This is a RANGE ONLY. You must tell the caller the final price is confirmed on site by the technician. Never state a single exact price.'\n}}];"
+      },
+      "id": "22e5605d-66ba-4d10-96ca-8ce3ebcf0277",
+      "name": "Format Price",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "answer",
+              "value": "={{ $json.message }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f365bb76-6910-4d4d-bb86-1a8e32efd599",
+      "name": "Reject Unknown",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -224,
+        256
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When Called": {
+      "main": [
+        [
+          {
+            "node": "Allowlist Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Allowlist Check": {
+      "main": [
+        [
+          {
+            "node": "Is Allowed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Allowed": {
+      "main": [
+        [
+          {
+            "node": "Price Lookup",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reject Unknown",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Price Lookup": {
+      "main": [
+        [
+          {
+            "node": "Format Price",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "ab3be0e8-15c6-4d0e-8565-9ba726d19e76",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "a8aad7cd26886a4e3707384d72f3be9a2c714383c845f46a2c271ed1a65439dd"
+  },
+  "nodeGroups": [],
+  "id": "8Y7gcy41szWcLeez",
+  "tags": []
+}

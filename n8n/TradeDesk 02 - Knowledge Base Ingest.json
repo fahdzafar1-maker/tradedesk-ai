@@ -1,0 +1,175 @@
+{
+  "name": "TradeDesk 02 - Knowledge Base Ingest",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "241bedde-a2a1-4b08-b13c-6382570a551c",
+      "name": "Run Ingest",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -336,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, business_id, content\nFROM kb_chunks\nWHERE embedding IS NULL\nORDER BY document_id, chunk_index\nLIMIT 50;",
+        "options": {}
+      },
+      "id": "44c93334-9d42-4f05-8b4c-317fcb22d2d8",
+      "name": "Get Unembedded Chunks",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -112,
+        -64
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "wYavQkoVwNLx84Sc",
+          "name": "TradeDesk Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/embeddings",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'text-embedding-3-small', input: $json.content }) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 5
+            }
+          }
+        }
+      },
+      "id": "e82da538-4a93-4d5e-bcbc-91322712b7a4",
+      "name": "Embed Chunk",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        112,
+        -64
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "5xsS6XmNzgYy1Xn9",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE kb_chunks\nSET embedding = $1::vector\nWHERE id = $2;",
+        "options": {
+          "queryReplacement": "={{ [ JSON.stringify($json.data[0].embedding), $('Get Unembedded Chunks').item.json.id ] }}"
+        }
+      },
+      "id": "0e32b50c-432f-43b4-904a-fb2dc1edab0d",
+      "name": "Save Embedding",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        336,
+        -64
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "wYavQkoVwNLx84Sc",
+          "name": "TradeDesk Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT count(*) FILTER (WHERE embedding IS NOT NULL) AS embedded,\n       count(*) FILTER (WHERE embedding IS NULL)     AS remaining\nFROM kb_chunks;",
+        "options": {}
+      },
+      "id": "7c123934-c919-4c45-b07a-aac305bc4728",
+      "name": "Report",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        544,
+        -64
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "postgres": {
+          "id": "wYavQkoVwNLx84Sc",
+          "name": "TradeDesk Postgres"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Run Ingest": {
+      "main": [
+        [
+          {
+            "node": "Get Unembedded Chunks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Unembedded Chunks": {
+      "main": [
+        [
+          {
+            "node": "Embed Chunk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embed Chunk": {
+      "main": [
+        [
+          {
+            "node": "Save Embedding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Embedding": {
+      "main": [
+        [
+          {
+            "node": "Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "802c9613-14a6-4d8d-96ae-4bdbc11feb71",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "a8aad7cd26886a4e3707384d72f3be9a2c714383c845f46a2c271ed1a65439dd"
+  },
+  "nodeGroups": [],
+  "id": "aApUDInv58dICq7w",
+  "tags": []
+}
