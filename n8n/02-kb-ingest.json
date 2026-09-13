@@ -1,0 +1,159 @@
+{
+  "name": "TradeDesk 02 - Knowledge Base Ingest",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "run_ingest",
+      "name": "Run Ingest",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -620,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, business_id, content\nFROM kb_chunks\nWHERE embedding IS NULL\nORDER BY document_id, chunk_index\nLIMIT 50;",
+        "options": {}
+      },
+      "id": "get_unembedded_chunks",
+      "name": "Get Unembedded Chunks",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -400,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "TRADEDESK_PG",
+          "name": "TradeDesk Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/embeddings",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'text-embedding-3-small', input: $json.content }) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 5,
+              "batchInterval": 1000
+            }
+          }
+        }
+      },
+      "id": "embed_chunk",
+      "name": "Embed Chunk",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -180,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE kb_chunks\nSET embedding = $1::vector\nWHERE id = $2;",
+        "options": {
+          "queryReplacement": "={{ [ JSON.stringify($json.data[0].embedding), $('Get Unembedded Chunks').item.json.id ] }}"
+        }
+      },
+      "id": "save_embedding",
+      "name": "Save Embedding",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        40,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "TRADEDESK_PG",
+          "name": "TradeDesk Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT count(*) FILTER (WHERE embedding IS NOT NULL) AS embedded,\n       count(*) FILTER (WHERE embedding IS NULL)     AS remaining\nFROM kb_chunks;",
+        "options": {}
+      },
+      "id": "report",
+      "name": "Report",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        260,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "TRADEDESK_PG",
+          "name": "TradeDesk Postgres"
+        }
+      },
+      "executeOnce": true
+    }
+  ],
+  "connections": {
+    "Run Ingest": {
+      "main": [
+        [
+          {
+            "node": "Get Unembedded Chunks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Unembedded Chunks": {
+      "main": [
+        [
+          {
+            "node": "Embed Chunk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embed Chunk": {
+      "main": [
+        [
+          {
+            "node": "Save Embedding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Embedding": {
+      "main": [
+        [
+          {
+            "node": "Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

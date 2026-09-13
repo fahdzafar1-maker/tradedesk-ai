@@ -1,0 +1,256 @@
+{
+  "name": "TradeDesk 05 - Global Error Handler",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## GLOBAL ERROR HANDLER\n\nThis workflow never runs on its own. It fires when ANOTHER workflow fails.\n\n**How to attach it:**\nOpen a workflow -> Settings -> Error Workflow -> select this workflow -> Save\n\nOne error handler covers every workflow in the instance. Attach it to all of\nthem (01 Front Desk, 02 KB Ingest, 03 Knowledge Search, 04 Price Lookup).\n\nUntil it is attached, it does nothing.",
+        "height": 320,
+        "width": 380,
+        "color": 3
+      },
+      "id": "note---how-to-use",
+      "name": "Note - How to use",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -464,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## WHAT IT DOES\n\n1. Normalises the error into a flat, readable shape\n2. Appends a permanent row to the `Errors` sheet\n3. Posts an immediate alert to Slack `#errors`\n\nThe point: no request can fail silently. Every failure is visible, has a\ntimestamp, names the node that broke, and links straight to the execution.\n\nNote the Sheets node uses `onError: continueRegularOutput` on purpose - if\nlogging fails, the Slack alert must still go out. An alerting path that can\nitself be taken down by a logging outage is not an alerting path.",
+        "height": 320,
+        "width": 380,
+        "color": 4
+      },
+      "id": "note---what-happens",
+      "name": "Note - What happens",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        128,
+        -64
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "error-trigger",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        -400,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e-time",
+              "name": "timestamp",
+              "value": "={{ new Date().toLocaleString('en-GB', { timeZone: 'Asia/Karachi' }) }}",
+              "type": "string"
+            },
+            {
+              "id": "e-wf",
+              "name": "workflow_name",
+              "value": "={{ $json.workflow?.name || 'Unknown workflow' }}",
+              "type": "string"
+            },
+            {
+              "id": "e-node",
+              "name": "failed_node",
+              "value": "={{ $json.execution?.lastNodeExecuted || 'Unknown node' }}",
+              "type": "string"
+            },
+            {
+              "id": "e-msg",
+              "name": "error_message",
+              "value": "={{ ($json.execution?.error?.message || 'No error message').toString().slice(0, 500) }}",
+              "type": "string"
+            },
+            {
+              "id": "e-url",
+              "name": "execution_url",
+              "value": "={{ $json.execution?.url || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "e-id",
+              "name": "execution_id",
+              "value": "={{ $json.execution?.id || '' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "normalize-error",
+      "name": "Normalize Error",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -160,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Errors",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "workflow_name",
+              "displayName": "workflow_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "failed_node",
+              "displayName": "failed_node",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "error_message",
+              "displayName": "error_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "execution_url",
+              "displayName": "execution_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "execution_id",
+              "displayName": "execution_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "id": "log-error-to-sheet",
+      "name": "Log Error to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        80,
+        304
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "#errors",
+          "mode": "name"
+        },
+        "text": "=:rotating_light: *Workflow Failed*\n\n*Workflow:* {{ $('Normalize Error').first().json.workflow_name }}\n*Failed at node:* `{{ $('Normalize Error').first().json.failed_node }}`\n*Time:* {{ $('Normalize Error').first().json.timestamp }}\n\n*Error:*\n```{{ $('Normalize Error').first().json.error_message }}```\n\n<{{ $('Normalize Error').first().json.execution_url }}|Open execution in n8n>",
+        "otherOptions": {
+          "includeLinkToWorkflow": false
+        }
+      },
+      "id": "alert-errors-channel",
+      "name": "Alert errors channel",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        320,
+        304
+      ]
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Normalize Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Error": {
+      "main": [
+        [
+          {
+            "node": "Log Error to Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Error to Sheet": {
+      "main": [
+        [
+          {
+            "node": "Alert errors channel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

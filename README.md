@@ -140,6 +140,7 @@ docs/        architecture notes and test evidence
 | `02-kb-ingest.json` | Generates embeddings for knowledge-base chunks |
 | `03-knowledge-search.json` | RAG retrieval tool (embed question → tenant-filtered vector search) |
 | `04-price-lookup.json` | Allowlisted price-book read |
+| `05-error-handler.json` | Global error handler — every failure is logged and alerted, never silent |
 
 ---
 
@@ -164,16 +165,29 @@ number on that page is what makes the case for keeping the system.
 | Question about service area and warranty | Answered from the business's own documents via RAG | Pass |
 | Unknown `service_code` | Rejected by the allowlist; query never reaches Postgres | Pass |
 
-Screenshots in `docs/`.
+![Prompt injection routed to escalation](docs/02-injection.png)
+*A prompt-injection attempt is routed to the escalation agent. The intake agent is never invoked.*
+
+![Duplicate event short-circuited](docs/03-dedup.png)
+*The same `external_id` arriving twice is short-circuited before it reaches any agent.*
+
+![Owner dashboard](docs/04-dashboard.png)
+*The owner-facing report — calls handled, jobs booked, pipeline value, escalations, and AI cost.*
+
+![Deployed infrastructure](docs/01-infrastructure.png)
+*Deployed on Railway: n8n with workers, its own Postgres, and a separate pgvector database for product data.*
 
 ---
 
 ## Setup
 
+0. **Error handling** — import `n8n/05-error-handler.json`, then set it as the
+   Error Workflow on every other workflow (Settings -> Error Workflow). Until it
+   is attached it does nothing.
 1. **Database** — deploy Postgres with pgvector (`pgvector/pgvector:pg18`), then run
-   `db/schema-clean.sql` followed by `db/seed-clean.sql`. Change the `agent_ro`
+   `db/schema.sql` followed by `db/seed.sql`. Change the `agent_ro`
    password first.
-2. **n8n** — import the four workflows from `n8n/`. Create one Postgres credential
+2. **n8n** — import the workflows from `n8n/`. Create one Postgres credential
    named `TradeDesk Postgres` and one OpenAI credential.
 3. **Embeddings** — run `02-kb-ingest` once to populate the vector column.
 4. **Dashboard** — deploy `api/` with `DATABASE_URL` and `DASHBOARD_TOKEN` set.
